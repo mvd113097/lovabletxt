@@ -8,7 +8,7 @@ describe("splitChapters", () => {
     const ch = splitChapters(raw);
     expect(ch.map((c) => c.idx)).toEqual([0, 1, 2, 3]);
     expect(ch.map((c) => c.title)).toEqual(["", "第1章 开始", "第2章 继续", "第10章 结束"]);
-    expect(ch[2].text).toBe("丙\n丁");
+    expect(ch[2]?.text).toBe("丙\n丁");
     const all = ch.map((c) => c.text).join("\n");
     for (const p of ["简介一段", "甲", "乙", "丙", "丁", "戊"]) expect(all).toContain(p);
   });

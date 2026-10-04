@@ -30,7 +30,7 @@ async function ownGeminiCall(keys: string[], input: string): Promise<Map<number,
   const now = Date.now();
   let lastErr = "";
   for (let n = 0; n < keys.length; n++) {
-    const key = keys[(keyCursor++) % keys.length];
+    const key = keys[(keyCursor++) % keys.length]!;
     if ((cooldown.get(key) ?? 0) > now) continue;
     let res: Response;
     try {
@@ -131,7 +131,7 @@ export function parseMarked(text: string): Map<number, string> {
   const re = /\[\[(\d+)\]\]\s*([\s\S]*?)(?=\n?\s*\[\[\d+\]\]|$)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
-    const t = m[2].trim();
+    const t = (m[2] ?? "").trim();
     if (t) out.set(Number(m[1]), t);
   }
   return out;
@@ -175,7 +175,7 @@ async function translateChunk(lines: string[], startNo: number): Promise<{ out: 
     let missing = lines.map((_, i) => startNo + i).filter((n) => !map.has(n));
     if (missing.length) {
       // One repair pass for any skipped lines, still with Gemini.
-      const repair = await geminiCall(missing.map((n) => lines[n - startNo]), 100000);
+      const repair = await geminiCall(missing.map((n) => lines[n - startNo]!), 100000);
       missing.forEach((n, i) => {
         const t = repair.get(100000 + i);
         if (t) map.set(n, t);
@@ -207,8 +207,8 @@ export async function translateChapter(title: string, source: string) {
   while (i < lines.length) {
     let j = i;
     let len = 0;
-    while (j < lines.length && (j === i || len + lines[j].length <= MAX_CHUNK_CHARS)) {
-      len += lines[j].length;
+    while (j < lines.length && (j === i || len + lines[j]!.length <= MAX_CHUNK_CHARS)) {
+      len += lines[j]!.length;
       j++;
     }
     const r = await translateChunk(lines.slice(i, j), i);
@@ -219,7 +219,7 @@ export async function translateChapter(title: string, source: string) {
   const [tTitle, ...body] = results;
   const text = body.join("\n\n");
   return {
-    title: title ? tTitle : "",
+    title: title ? (tTitle ?? "") : "",
     text,
     usedGoogle,
     words: text.split(/\s+/).filter(Boolean).length,

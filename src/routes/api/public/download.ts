@@ -52,7 +52,7 @@ export const Route = createFileRoute("/api/public/download")({
         }
         const { buildEpub } = await import("@/lib/epub.server");
         const bytes = buildEpub(novel.title, chapters);
-        return new Response(bytes, {
+        return new Response(bytes as unknown as BodyInit, {
           headers: { "content-type": "application/epub+zip", "content-disposition": disp },
         });
       },

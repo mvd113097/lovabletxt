@@ -206,7 +206,7 @@ function Upload({ token, onDone }: { token: string; onDone: () => void }) {
             await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
           }
         }
-        setProgress(Math.round(((batch[batch.length - 1].idx + 1) / chapters.length) * 100));
+        setProgress(Math.round(((batch[batch.length - 1]!.idx + 1) / chapters.length) * 100));
         batch = [];
         size = 0;
       };
