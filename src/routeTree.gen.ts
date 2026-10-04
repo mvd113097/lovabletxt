@@ -10,11 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiPublicDownloadRouteImport } from './routes/api/public/download'
 import { Route as ApiPublicTickRouteImport } from './routes/api/public/tick'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicDownloadRoute = ApiPublicDownloadRouteImport.update({
+  id: '/api/public/download',
+  path: '/api/public/download',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicTickRoute = ApiPublicTickRouteImport.update({
@@ -25,27 +31,31 @@ const ApiPublicTickRoute = ApiPublicTickRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/public/download': typeof ApiPublicDownloadRoute
   '/api/public/tick': typeof ApiPublicTickRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/public/download': typeof ApiPublicDownloadRoute
   '/api/public/tick': typeof ApiPublicTickRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/public/download': typeof ApiPublicDownloadRoute
   '/api/public/tick': typeof ApiPublicTickRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/public/tick'
+  fullPaths: '/' | '/api/public/download' | '/api/public/tick'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/public/tick'
-  id: '__root__' | '/' | '/api/public/tick'
+  to: '/' | '/api/public/download' | '/api/public/tick'
+  id: '__root__' | '/' | '/api/public/download' | '/api/public/tick'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiPublicDownloadRoute: typeof ApiPublicDownloadRoute
   ApiPublicTickRoute: typeof ApiPublicTickRoute
 }
 
@@ -56,6 +66,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/download': {
+      id: '/api/public/download'
+      path: '/api/public/download'
+      fullPath: '/api/public/download'
+      preLoaderRoute: typeof ApiPublicDownloadRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/tick': {
@@ -70,6 +87,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiPublicDownloadRoute: ApiPublicDownloadRoute,
   ApiPublicTickRoute: ApiPublicTickRoute,
 }
 export const routeTree = rootRouteImport

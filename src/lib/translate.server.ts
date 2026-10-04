@@ -113,7 +113,7 @@ async function translateChunk(lines: string[], startNo: number): Promise<{ out: 
       missing = missing.filter((n) => !map.has(n));
       if (missing.length) throw new TransientError(`gemini skipped ${missing.length} line(s)`);
     }
-    return { out: lines.map((_, i) => map.get(startNo + i)!), usedGoogle: false };
+    return { out: lines.map((_, i) => map.get(startNo + i)!.replace(/\s*\n\s*/g, " ")), usedGoogle: false };
   } catch (e) {
     if (!(e instanceof BlockedError)) throw e;
     // Only this refused piece goes to Google Translate.
