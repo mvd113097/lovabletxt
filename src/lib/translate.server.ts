@@ -14,10 +14,80 @@ Rules:
 - Never merge, skip, summarize or add lines. Never add notes or commentary.
 - Keep names consistent and use pinyin for names.`;
 
+// User's own Gemini keys (GEMINI_API_KEYS, comma-separated). Rotated per call; a rate-limited key is skipped.
+export const OWN_GEMINI_MODEL = "gemini-2.5-flash";
+let keyCursor = 0;
+const cooldown = new Map<string, number>();
+
+function ownKeys() {
+  return (process.env["GEMINI_API_KEYS"] ?? process.env["GEMINI_API_KEY"] ?? "")
+    .split(/[,\s]+/)
+    .map((k) => k.trim())
+    .filter(Boolean);
+}
+
+async function ownGeminiCall(keys: string[], input: string): Promise<Map<number, string>> {
+  const now = Date.now();
+  let lastErr = "";
+  for (let n = 0; n < keys.length; n++) {
+    const key = keys[(keyCursor++) % keys.length];
+    if ((cooldown.get(key) ?? 0) > now) continue;
+    let res: Response;
+    try {
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${OWN_GEMINI_MODEL}:generateContent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: SYSTEM }] },
+            contents: [{ role: "user", parts: [{ text: input }] }],
+            generationConfig: { temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
+            safetySettings: [
+              "HARM_CATEGORY_HARASSMENT",
+              "HARM_CATEGORY_HATE_SPEECH",
+              "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+              "HARM_CATEGORY_DANGEROUS_CONTENT",
+            ].map((category) => ({ category, threshold: "BLOCK_NONE" })),
+          }),
+        },
+      );
+    } catch (e) {
+      lastErr = `network: ${(e as Error).message}`;
+      continue;
+    }
+    const body = await res.text();
+    if (res.status === 429 || res.status === 403 || res.status >= 500) {
+      cooldown.set(key, now + (res.status === 429 ? 60_000 : 300_000));
+      lastErr = `gemini key ${res.status}`;
+      continue; // try the next key
+    }
+    if (!res.ok) {
+      if (SAFETY_RE.test(body)) throw new BlockedError(`gemini ${res.status}`);
+      lastErr = `gemini ${res.status}: ${body.slice(0, 150)}`;
+      continue;
+    }
+    const json = JSON.parse(body);
+    if (json.promptFeedback?.blockReason) throw new BlockedError(`blocked: ${json.promptFeedback.blockReason}`);
+    const cand = json.candidates?.[0];
+    const finish = String(cand?.finishReason ?? "");
+    const text: string = (cand?.content?.parts ?? []).map((p: any) => p.text ?? "").join("");
+    if (/SAFETY|PROHIBITED|BLOCKLIST|SPII|RECITATION/.test(finish)) throw new BlockedError(`refused: ${finish}`);
+    if (!text.trim()) {
+      lastErr = `empty reply (${finish})`;
+      continue;
+    }
+    return parseMarked(text);
+  }
+  throw new TransientError(lastErr || "all Gemini keys busy");
+}
+
 async function geminiCall(lines: string[], startNo: number): Promise<Map<number, string>> {
+  const input = lines.map((l, i) => `[[${startNo + i}]] ${l}`).join("\n");
+  const keys = ownKeys();
+  if (keys.length) return ownGeminiCall(keys, input);
   const key = process.env["LOVABLE_API_KEY"];
   if (!key) throw new Error("LOVABLE_API_KEY missing");
-  const input = lines.map((l, i) => `[[${startNo + i}]] ${l}`).join("\n");
   let res: Response;
   try {
     res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
