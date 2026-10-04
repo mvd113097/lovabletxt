@@ -150,6 +150,18 @@ export type Database = {
         }
       }
       ensure_tick: { Args: never; Returns: undefined }
+      novel_progress: {
+        Args: never
+        Returns: {
+          done: number
+          google: number
+          last_error: string
+          novel_id: string
+          ready: number
+          ready_words: number
+          total: number
+        }[]
+      }
       stop_tick: { Args: never; Returns: undefined }
     }
     Enums: {
