@@ -14,13 +14,143 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      app_settings: {
+        Row: {
+          cron_secret: string
+          id: number
+          passcode_hash: string | null
+          telegram_chat_id: string | null
+          tick_url: string
+        }
+        Insert: {
+          cron_secret?: string
+          id?: number
+          passcode_hash?: string | null
+          telegram_chat_id?: string | null
+          tick_url?: string
+        }
+        Update: {
+          cron_secret?: string
+          id?: number
+          passcode_hash?: string | null
+          telegram_chat_id?: string | null
+          tick_url?: string
+        }
+        Relationships: []
+      }
+      chapters: {
+        Row: {
+          attempts: number
+          engine: string | null
+          idx: number
+          last_error: string | null
+          locked_at: string | null
+          novel_id: string
+          source_text: string
+          status: string
+          title: string
+          translated_text: string | null
+          translated_title: string | null
+          word_count: number
+        }
+        Insert: {
+          attempts?: number
+          engine?: string | null
+          idx: number
+          last_error?: string | null
+          locked_at?: string | null
+          novel_id: string
+          source_text: string
+          status?: string
+          title?: string
+          translated_text?: string | null
+          translated_title?: string | null
+          word_count?: number
+        }
+        Update: {
+          attempts?: number
+          engine?: string | null
+          idx?: number
+          last_error?: string | null
+          locked_at?: string | null
+          novel_id?: string
+          source_text?: string
+          status?: string
+          title?: string
+          translated_text?: string | null
+          translated_title?: string | null
+          word_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chapters_novel_id_fkey"
+            columns: ["novel_id"]
+            isOneToOne: false
+            referencedRelation: "novels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      novels: {
+        Row: {
+          created_at: string
+          finished_at: string | null
+          id: string
+          notified: boolean
+          status: string
+          title: string
+          total_chapters: number
+        }
+        Insert: {
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          notified?: boolean
+          status?: string
+          title: string
+          total_chapters?: number
+        }
+        Update: {
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          notified?: boolean
+          status?: string
+          title?: string
+          total_chapters?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      claim_chapters: {
+        Args: { _limit: number }
+        Returns: {
+          attempts: number
+          engine: string | null
+          idx: number
+          last_error: string | null
+          locked_at: string | null
+          novel_id: string
+          source_text: string
+          status: string
+          title: string
+          translated_text: string | null
+          translated_title: string | null
+          word_count: number
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "chapters"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      ensure_tick: { Args: never; Returns: undefined }
+      stop_tick: { Args: never; Returns: undefined }
     }
     Enums: {
       [_ in never]: never
