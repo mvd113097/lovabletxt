@@ -15,7 +15,7 @@ Rules:
 - Keep names consistent and use pinyin for names.`;
 
 // User's own Gemini keys (GEMINI_API_KEYS, comma-separated). Rotated per call; a rate-limited key is skipped.
-export const OWN_GEMINI_MODEL = "gemini-2.5-flash";
+export const OWN_GEMINI_MODEL = "gemini-3.8-flash";
 let keyCursor = 0;
 const cooldown = new Map<string, number>();
 
@@ -42,7 +42,7 @@ async function ownGeminiCall(keys: string[], input: string): Promise<Map<number,
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: SYSTEM }] },
             contents: [{ role: "user", parts: [{ text: input }] }],
-            generationConfig: { temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
+            generationConfig: { temperature: 0.3, thinkingConfig: { thinkingLevel: "low" } },
             safetySettings: [
               "HARM_CATEGORY_HARASSMENT",
               "HARM_CATEGORY_HATE_SPEECH",
@@ -58,7 +58,7 @@ async function ownGeminiCall(keys: string[], input: string): Promise<Map<number,
     }
     const body = await res.text();
     if (res.status === 429 || res.status === 403 || res.status >= 500) {
-      cooldown.set(key, now + (res.status === 429 ? 60_000 : 300_000));
+      cooldown.set(key, now + (res.status === 403 ? 600_000 : res.status === 429 ? 60_000 : 20_000));
       lastErr = `gemini key ${res.status}`;
       continue; // try the next key
     }
