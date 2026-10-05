@@ -64,6 +64,7 @@ async function ownGeminiCall(keys: string[], input: string): Promise<Map<number,
     }
     if (!res.ok) {
       if (SAFETY_RE.test(body)) throw new BlockedError(`gemini ${res.status}`);
+      if (res.status === 400 || res.status === 401) cooldown.set(key, now + 600_000); // bad/expired key: skip for 10 min
       lastErr = `gemini ${res.status}: ${body.slice(0, 150)}`;
       continue;
     }
