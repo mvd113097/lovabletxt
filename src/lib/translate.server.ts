@@ -1,6 +1,7 @@
 // Translation engine: Gemini first; Google Translate ONLY for parts Gemini refuses on safety grounds.
 export const GEMINI_MODEL = "google/gemini-3.1-flash-lite";
-const MAX_CHUNK_CHARS = 4500;
+// Bigger pieces = fewer requests against the free daily quota (original MegaTXT uses ~9000).
+const MAX_CHUNK_CHARS = 9000;
 
 export class BlockedError extends Error {}
 export class TransientError extends Error {}
@@ -14,10 +15,13 @@ Rules:
 - Never merge, skip, summarize or add lines. Never add notes or commentary.
 - Keep names consistent and use pinyin for names.`;
 
-// User's own Gemini keys (GEMINI_API_KEYS, comma-separated). Rotated per call; a rate-limited key is skipped.
-export const OWN_GEMINI_MODEL = "gemini-3.8-flash";
-let keyCursor = 0;
-const cooldown = new Map<string, number>();
+// User's own free Gemini keys (GEMINI_API_KEYS, comma-separated, e.g. "AQ..." keys from different projects).
+// Same strategy as the original MegaTXT: flash-lite first (largest free daily quota), other free models
+// as backup, least-recently-used key rotation, and per key+model cooldowns that honour Google's retryDelay.
+export const FREE_MODELS = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
+export const OWN_GEMINI_MODEL = FREE_MODELS[0]!;
+const cooldown = new Map<string, number>(); // `${model}|${key}` or `${model}|*` -> ready-at ms
+const lastUsed = new Map<string, number>();
 
 function ownKeys() {
   return (process.env["GEMINI_API_KEYS"] ?? process.env["GEMINI_API_KEY"] ?? "")
@@ -26,23 +30,37 @@ function ownKeys() {
     .filter(Boolean);
 }
 
+/** ms until Google's free daily quota resets (midnight US Pacific ≈ 08:00 UTC). */
+function msUntilDailyReset(now: number) {
+  const d = new Date(now);
+  const reset = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 8, 5);
+  return (reset > now ? reset : reset + 86_400_000) - now;
+}
+
+export function retryDelayMs(body: string): number | null {
+  const m = /"retryDelay"\s*:\s*"([\d.]+)s"/.exec(body);
+  return m ? Math.ceil(Number(m[1]) * 1000) + 1000 : null;
+}
+
 async function ownGeminiCall(keys: string[], input: string): Promise<Map<number, string>> {
-  const now = Date.now();
   let lastErr = "";
-  for (let n = 0; n < keys.length; n++) {
-    const key = keys[(keyCursor++) % keys.length]!;
-    if ((cooldown.get(key) ?? 0) > now) continue;
-    let res: Response;
-    try {
-      res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${OWN_GEMINI_MODEL}:generateContent`,
-        {
+  for (const model of FREE_MODELS) {
+    const now = Date.now();
+    if ((cooldown.get(`${model}|*`) ?? 0) > now) continue;
+    const ready = keys
+      .filter((k) => (cooldown.get(`${model}|${k}`) ?? 0) <= now)
+      .sort((a, b) => (lastUsed.get(a) ?? 0) - (lastUsed.get(b) ?? 0));
+    for (const key of ready) {
+      lastUsed.set(key, Date.now());
+      let res: Response;
+      try {
+        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": key },
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: SYSTEM }] },
             contents: [{ role: "user", parts: [{ text: input }] }],
-            generationConfig: { temperature: 0.3, thinkingConfig: { thinkingLevel: "low" } },
+            generationConfig: { temperature: 0.3 },
             safetySettings: [
               "HARM_CATEGORY_HARASSMENT",
               "HARM_CATEGORY_HATE_SPEECH",
@@ -50,37 +68,46 @@ async function ownGeminiCall(keys: string[], input: string): Promise<Map<number,
               "HARM_CATEGORY_DANGEROUS_CONTENT",
             ].map((category) => ({ category, threshold: "BLOCK_NONE" })),
           }),
-        },
-      );
-    } catch (e) {
-      lastErr = `network: ${(e as Error).message}`;
-      continue;
+        });
+      } catch (e) {
+        lastErr = `network: ${(e as Error).message}`;
+        continue;
+      }
+      const body = await res.text();
+      const t = Date.now();
+      if (res.status === 429) {
+        // Daily quota used up -> rest this key on this model until reset; per-minute -> wait what Google says.
+        const daily = /PerDay|per day|daily/i.test(body);
+        cooldown.set(`${model}|${key}`, t + (daily ? msUntilDailyReset(t) : (retryDelayMs(body) ?? 60_000)));
+        lastErr = `${model} 429${daily ? " (daily)" : ""}`;
+        continue;
+      }
+      if (res.status === 503 || res.status >= 500) {
+        // Model overloaded for everyone: skip this model briefly, try the next free model.
+        cooldown.set(`${model}|*`, t + 30_000);
+        lastErr = `${model} ${res.status}`;
+        break;
+      }
+      if (!res.ok) {
+        if (SAFETY_RE.test(body)) throw new BlockedError(`gemini ${res.status}`);
+        cooldown.set(`${model}|${key}`, t + 600_000); // bad key / not allowed on this model
+        lastErr = `${model} ${res.status}: ${body.slice(0, 150)}`;
+        continue;
+      }
+      const json = JSON.parse(body);
+      if (json.promptFeedback?.blockReason) throw new BlockedError(`blocked: ${json.promptFeedback.blockReason}`);
+      const cand = json.candidates?.[0];
+      const finish = String(cand?.finishReason ?? "");
+      const text: string = (cand?.content?.parts ?? []).map((p: any) => p.text ?? "").join("");
+      if (/SAFETY|PROHIBITED|BLOCKLIST|SPII|RECITATION/.test(finish)) throw new BlockedError(`refused: ${finish}`);
+      if (!text.trim()) {
+        lastErr = `empty reply (${finish})`;
+        continue;
+      }
+      return parseMarked(text);
     }
-    const body = await res.text();
-    if (res.status === 429 || res.status === 403 || res.status >= 500) {
-      cooldown.set(key, now + (res.status === 403 ? 600_000 : res.status === 429 ? 60_000 : 20_000));
-      lastErr = `gemini key ${res.status}`;
-      continue; // try the next key
-    }
-    if (!res.ok) {
-      if (SAFETY_RE.test(body)) throw new BlockedError(`gemini ${res.status}`);
-      if (res.status === 400 || res.status === 401) cooldown.set(key, now + 600_000); // bad/expired key: skip for 10 min
-      lastErr = `gemini ${res.status}: ${body.slice(0, 150)}`;
-      continue;
-    }
-    const json = JSON.parse(body);
-    if (json.promptFeedback?.blockReason) throw new BlockedError(`blocked: ${json.promptFeedback.blockReason}`);
-    const cand = json.candidates?.[0];
-    const finish = String(cand?.finishReason ?? "");
-    const text: string = (cand?.content?.parts ?? []).map((p: any) => p.text ?? "").join("");
-    if (/SAFETY|PROHIBITED|BLOCKLIST|SPII|RECITATION/.test(finish)) throw new BlockedError(`refused: ${finish}`);
-    if (!text.trim()) {
-      lastErr = `empty reply (${finish})`;
-      continue;
-    }
-    return parseMarked(text);
   }
-  throw new TransientError(lastErr || "all Gemini keys busy");
+  throw new TransientError(lastErr || "all Gemini keys resting (free limit)");
 }
 
 async function geminiCall(lines: string[], startNo: number): Promise<Map<number, string>> {
