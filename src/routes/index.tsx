@@ -271,6 +271,32 @@ function NovelCard({ n, token, onChange }: { n: Novel; token: string; onChange: 
   };
   const dl = (format: "epub" | "txt") =>
     `/api/public/download?id=${n.id}&format=${format}&t=${encodeURIComponent(token)}`;
+  // Fetch in-page (keeps the browser session) and verify it's a real file before saving,
+  // so phone download managers never save an error page as a broken .epub.
+  const save = async (format: "epub" | "txt") => {
+    setBusy(true);
+    try {
+      const res = await fetch(dl(format), { credentials: "include" });
+      if (!res.ok) throw new Error((await res.text()).slice(0, 120) || `Download failed (${res.status})`);
+      const blob = await res.blob();
+      if (format === "epub") {
+        const head = new Uint8Array(await blob.slice(0, 2).arrayBuffer());
+        if (head[0] !== 0x50 || head[1] !== 0x4b) throw new Error("Download was not a valid EPUB, try again");
+      }
+      const safe = n.title.replace(/[^\p{L}\p{N} _-]+/gu, "").trim() || "novel";
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([blob], { type: format === "epub" ? "application/epub+zip" : "text/plain" }));
+      a.download = `${safe} (ch 1-${n.ready}).${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const label =
     n.status === "done" ? "Finished" : n.status === "running" ? "Translating" : incomplete ? "Upload incomplete" : "Paused";
 
@@ -304,12 +330,12 @@ function NovelCard({ n, token, onChange }: { n: Novel; token: string; onChange: 
       <div className="mt-3 flex flex-wrap gap-2">
         {n.ready > 0 && (
           <>
-            <a className={btnPrimary} href={dl("epub")}>
+            <button className={btnPrimary} disabled={busy} onClick={() => save("epub")}>
               EPUB
-            </a>
-            <a className={btnGhost} href={dl("txt")}>
+            </button>
+            <button className={btnGhost} disabled={busy} onClick={() => save("txt")}>
               TXT
-            </a>
+            </button>
           </>
         )}
         {n.status === "running" && (
