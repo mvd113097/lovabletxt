@@ -23,7 +23,15 @@ export const OWN_GEMINI_MODEL = FREE_MODELS[0]!;
 const cooldown = new Map<string, number>(); // `${model}|${key}` or `${model}|*` -> ready-at ms
 const lastUsed = new Map<string, number>();
 
-function ownKeys() {
+// Free tier ≈ 15 requests/min per project; 6s gap keeps each key ≤ 10/min.
+export const KEY_GAP_MS = 6000;
+
+/** How many chapters to translate at once: one per own key (min 3). */
+export function parallelChapters() {
+  return Math.min(10, Math.max(3, ownKeys().length));
+}
+
+export function ownKeys() {
   return (process.env["GEMINI_API_KEYS"] ?? process.env["GEMINI_API_KEY"] ?? "")
     .split(/[,\s]+/)
     .map((k) => k.trim())
@@ -51,7 +59,10 @@ async function ownGeminiCall(keys: string[], input: string): Promise<Map<number,
       .filter((k) => (cooldown.get(`${model}|${k}`) ?? 0) <= now)
       .sort((a, b) => (lastUsed.get(a) ?? 0) - (lastUsed.get(b) ?? 0));
     for (const key of ready) {
-      lastUsed.set(key, Date.now());
+      // Per-minute safety: never hit the same key more often than every KEY_GAP_MS.
+      const wait = (lastUsed.get(key) ?? 0) + KEY_GAP_MS - Date.now();
+      lastUsed.set(key, Date.now() + Math.max(0, wait));
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       let res: Response;
       try {
         res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {

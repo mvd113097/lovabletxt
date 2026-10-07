@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { CreditsError, translateChapter } from "./translate.server";
+import { CreditsError, parallelChapters, translateChapter } from "./translate.server";
 import { getSettings } from "./auth.server";
 
 export async function sendTelegram(text: string) {
@@ -71,7 +71,7 @@ export async function runTick() {
   const started = Date.now();
   let processed = 0;
   while (Date.now() - started < 35_000) {
-    const { data: claimed, error } = await supabaseAdmin.rpc("claim_chapters", { _limit: 3 });
+    const { data: claimed, error } = await supabaseAdmin.rpc("claim_chapters", { _limit: parallelChapters() });
     if (error) throw new Error(error.message);
     if (!claimed?.length) break;
     const results = await Promise.allSettled(claimed.map(processOne));
