@@ -8,3 +8,6 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Service worker only via vite-plugin-pwa generateSW, registered solely from src/lib/pwa.ts (guarded off in dev/preview) — avoids stale previews.
+- Translation chunks come from packChunks in translate.server.ts — keeps requests minimal and ordered.
