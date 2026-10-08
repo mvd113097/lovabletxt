@@ -230,6 +230,35 @@ async function translateChunk(lines: string[], startNo: number): Promise<{ out: 
   }
 }
 
+function greedy(lens: number[], cap: number): [number, number][] {
+  const out: [number, number][] = [];
+  let i = 0;
+  while (i < lens.length) {
+    let j = i;
+    let len = 0;
+    while (j < lens.length && (j === i || len + lens[j]! <= cap)) len += lens[j++]!;
+    out.push([i, j]);
+    i = j;
+  }
+  return out;
+}
+
+/** Ordered [start,end) ranges: fewest requests possible, sizes as even as possible (no tiny tail piece). */
+export function packChunks(lines: string[], max = MAX_CHUNK_CHARS): [number, number][] {
+  const lens = lines.map((l) => l.length);
+  const best = greedy(lens, max);
+  if (best.length <= 1) return best;
+  const total = lens.reduce((a, b) => a + b, 0);
+  // Smallest cap that still needs no more requests than plain greedy packing.
+  let lo = Math.ceil(total / best.length), hi = max;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (greedy(lens, mid).length <= best.length) hi = mid;
+    else lo = mid + 1;
+  }
+  return greedy(lens, lo);
+}
+
 export function splitParagraphs(text: string) {
   return text
     .split(/\r?\n/)
@@ -242,18 +271,10 @@ export async function translateChapter(title: string, source: string) {
   const lines = [title || " ", ...paras];
   const results: string[] = [];
   let usedGoogle = false;
-  let i = 0;
-  while (i < lines.length) {
-    let j = i;
-    let len = 0;
-    while (j < lines.length && (j === i || len + lines[j]!.length <= MAX_CHUNK_CHARS)) {
-      len += lines[j]!.length;
-      j++;
-    }
+  for (const [i, j] of packChunks(lines, MAX_CHUNK_CHARS)) {
     const r = await translateChunk(lines.slice(i, j), i);
     results.push(...r.out);
     usedGoogle ||= r.usedGoogle;
-    i = j;
   }
   const [tTitle, ...body] = results;
   const text = body.join("\n\n");
