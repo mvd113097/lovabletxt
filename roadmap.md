@@ -7,3 +7,5 @@
 - [x] Support Gemini keys starting with "AQ"
 - [x] Data-saving progress check (one tiny request on open, polls only while visible)
 - [ ] Telegram connector link (user action)
+- [x] Even request packing (fewest requests, no tiny tail)
+- [x] Offline app shell (published app only)
