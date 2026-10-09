@@ -182,9 +182,18 @@ async function googleOne(text: string): Promise<string> {
     headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
     body: "q=" + encodeURIComponent(text),
   });
-  if (!res.ok) throw new TransientError(`google ${res.status}`);
-  const data = (await res.json()) as any;
-  return (data?.[0] ?? []).map((x: any) => x?.[0] ?? "").join("");
+  if (res.ok) {
+    const data = (await res.json()) as any;
+    return (data?.[0] ?? []).map((x: any) => x?.[0] ?? "").join("");
+  }
+  // Backup free endpoint when the first one is rate-limited.
+  const r2 = await fetch(
+    "https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=en&q=" + encodeURIComponent(text),
+  );
+  if (!r2.ok) throw new TransientError(`google ${res.status}/${r2.status}`);
+  const d2 = (await r2.json()) as any;
+  const first = Array.isArray(d2) ? d2[0] : d2?.sentences?.map((s: any) => s.trans ?? "").join("");
+  return Array.isArray(first) ? String(first[0] ?? "") : String(first ?? "");
 }
 
 /** Google Translate a list of lines, guaranteeing one output per input line. */
@@ -225,7 +234,14 @@ async function translateChunk(lines: string[], startNo: number): Promise<{ out: 
     return { out: lines.map((_, i) => map.get(startNo + i)!.replace(/\s*\n\s*/g, " ")), usedGoogle: false };
   } catch (e) {
     if (!(e instanceof BlockedError)) throw e;
-    // Only this refused piece goes to Google Translate.
+    // Narrow down the refused part: split in half and retry Gemini, so only the
+    // smallest refused piece (ideally one paragraph) ever goes to Google Translate.
+    if (lines.length > 1) {
+      const mid = Math.ceil(lines.length / 2);
+      const a = await translateChunk(lines.slice(0, mid), startNo);
+      const b = await translateChunk(lines.slice(mid), startNo + mid);
+      return { out: [...a.out, ...b.out], usedGoogle: a.usedGoogle || b.usedGoogle };
+    }
     return { out: await googleLines(lines), usedGoogle: true };
   }
 }
