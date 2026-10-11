@@ -282,13 +282,28 @@ export function splitParagraphs(text: string) {
     .filter(Boolean);
 }
 
-export async function translateChapter(title: string, source: string) {
+export type Partial = Record<string, { out: string[]; g?: boolean }>;
+
+/** Translates a chapter piece by piece. Finished pieces are kept in `partial` (saved via onPiece)
+ *  so a retry never re-sends work that already succeeded — protects the free daily quota. */
+export async function translateChapter(
+  title: string,
+  source: string,
+  partial: Partial = {},
+  onPiece?: (p: Partial) => Promise<void>,
+) {
   const paras = splitParagraphs(source);
   const lines = [title || " ", ...paras];
   const results: string[] = [];
   let usedGoogle = false;
   for (const [i, j] of packChunks(lines, MAX_CHUNK_CHARS)) {
-    const r = await translateChunk(lines.slice(i, j), i);
+    const k = `${i}-${j}`;
+    let r = partial[k] && partial[k].out.length === j - i ? { out: partial[k].out, usedGoogle: !!partial[k].g } : null;
+    if (!r) {
+      r = await translateChunk(lines.slice(i, j), i);
+      partial[k] = { out: r.out, g: r.usedGoogle };
+      if (onPiece) await onPiece(partial);
+    }
     results.push(...r.out);
     usedGoogle ||= r.usedGoogle;
   }
