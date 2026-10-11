@@ -46,6 +46,7 @@ export type Database = {
           last_error: string | null
           locked_at: string | null
           novel_id: string
+          partial: Json
           source_text: string
           status: string
           title: string
@@ -60,6 +61,7 @@ export type Database = {
           last_error?: string | null
           locked_at?: string | null
           novel_id: string
+          partial?: Json
           source_text: string
           status?: string
           title?: string
@@ -74,6 +76,7 @@ export type Database = {
           last_error?: string | null
           locked_at?: string | null
           novel_id?: string
+          partial?: Json
           source_text?: string
           status?: string
           title?: string
@@ -135,6 +138,7 @@ export type Database = {
           last_error: string | null
           locked_at: string | null
           novel_id: string
+          partial: Json
           source_text: string
           status: string
           title: string

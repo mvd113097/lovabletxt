@@ -1,0 +1,1 @@
+alter table public.chapters add column if not exists partial jsonb not null default '{}'::jsonb;
