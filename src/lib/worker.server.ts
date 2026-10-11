@@ -33,9 +33,16 @@ async function finishCheck(novelId: string) {
   if (data) await sendTelegram(`✅ "${data.title}" finished translating. Open MegaTXT to download the EPUB.`);
 }
 
-async function processOne(ch: { novel_id: string; idx: number; title: string; source_text: string }) {
+async function processOne(ch: { novel_id: string; idx: number; title: string; source_text: string; partial?: unknown }) {
   try {
-    const r = await translateChapter(ch.title, ch.source_text);
+    const r = await translateChapter(ch.title, ch.source_text, (ch.partial ?? {}) as any, async (p) => {
+      // Save each finished piece and refresh the lock so a long chapter isn't re-claimed mid-way.
+      await supabaseAdmin
+        .from("chapters")
+        .update({ partial: p as any, locked_at: new Date().toISOString() })
+        .eq("novel_id", ch.novel_id)
+        .eq("idx", ch.idx);
+    });
     await supabaseAdmin
       .from("chapters")
       .update({
@@ -46,6 +53,7 @@ async function processOne(ch: { novel_id: string; idx: number; title: string; so
         word_count: r.words,
         last_error: null,
         locked_at: null,
+        partial: {},
       })
       .eq("novel_id", ch.novel_id)
       .eq("idx", ch.idx);
