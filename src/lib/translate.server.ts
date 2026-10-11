@@ -32,7 +32,8 @@ export function parallelChapters() {
 }
 
 export function ownKeys() {
-  return (process.env["GEMINI_API_KEYS"] ?? process.env["GEMINI_API_KEY"] ?? "")
+  const all = `${process.env["GEMINI_API_KEYS"] ?? process.env["GEMINI_API_KEY"] ?? ""},${process.env["GEMINI_API_KEY_EXTRA"] ?? ""}`;
+  return all
     .split(/[,\s]+/)
     .map((k) => k.trim())
     .filter(Boolean);
