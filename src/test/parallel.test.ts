@@ -5,9 +5,10 @@ describe("parallel translation", () => {
   afterEach(() => {
     delete process.env["GEMINI_API_KEYS"];
   });
-  it("translates one chapter per key at once", () => {
+  it("translates two chapters per key at once", () => {
     process.env["GEMINI_API_KEYS"] = "AQ.a,AQ.b,AQ.c,AQ.d,AQ.e";
-    expect(parallelChapters()).toBe(5);
+    delete process.env["GEMINI_API_KEY_EXTRA"];
+    expect(parallelChapters()).toBe(10);
   });
   it("never uses one key more than 10 times a minute", () => {
     expect(60_000 / KEY_GAP_MS).toBeLessThanOrEqual(10);

@@ -26,9 +26,10 @@ const lastUsed = new Map<string, number>();
 // Free tier ≈ 15 requests/min per project; 6s gap keeps each key ≤ 10/min.
 export const KEY_GAP_MS = 6000;
 
-/** How many chapters to translate at once: one per own key (min 3). */
+/** How many chapters to translate at once: two per own key (min 3). The per-key gap
+ *  (KEY_GAP_MS) still caps each key at ≤10 requests/min, so this only hides Gemini's reply time. */
 export function parallelChapters() {
-  return Math.min(10, Math.max(3, ownKeys().length));
+  return Math.min(14, Math.max(3, ownKeys().length * 2));
 }
 
 export function ownKeys() {
