@@ -7,6 +7,7 @@ describe("parallel translation", () => {
   });
   it("translates two chapters per key at once", () => {
     process.env["GEMINI_API_KEYS"] = "AQ.a,AQ.b,AQ.c,AQ.d,AQ.e";
+    delete process.env["GEMINI_API_KEY_EXTRA"];
     expect(parallelChapters()).toBe(10);
   });
   it("never uses one key more than 10 times a minute", () => {
