@@ -16,10 +16,11 @@ Rules:
 - Keep names consistent and use pinyin for names.`;
 
 // User's own free Gemini keys (GEMINI_API_KEYS, comma-separated, e.g. "AQ..." keys from different projects).
-// Same strategy as the original MegaTXT: flash-lite first (largest free daily quota), other free models
-// as backup, least-recently-used key rotation, and per key+model cooldowns that honour Google's retryDelay.
-export const FREE_MODELS = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
-export const OWN_GEMINI_MODEL = FREE_MODELS[0]!;
+// Stable Flash-Lite models only: favor the newer Lite model for translation, then older Lite.
+// Avoid full Flash's tighter free quotas and "latest" aliases that duplicate a model's quota.
+// Least-recently-used key rotation and per key+model cooldowns honour Google's retryDelay.
+export const FREE_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"] as const;
+export const OWN_GEMINI_MODEL = FREE_MODELS[0];
 const cooldown = new Map<string, number>(); // `${model}|${key}` or `${model}|*` -> ready-at ms
 const lastUsed = new Map<string, number>();
 

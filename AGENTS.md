@@ -11,3 +11,4 @@
 
 - Service worker only via vite-plugin-pwa generateSW, registered solely from src/lib/pwa.ts (guarded off in dev/preview) — avoids stale previews.
 - Translation chunks come from packChunks in translate.server.ts — keeps requests minimal and ordered.
+- Own-key translation uses distinct stable Flash-Lite model IDs only, newer first; exclude full Flash and duplicate aliases to avoid tighter or shared fallback quotas.
