@@ -22,6 +22,13 @@
       "when": 1791706374612,
       "tag": "0002_chapter_partial",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793627693254,
+      "tag": "0003_claim_window",
+      "breakpoints": true
     }
   ]
 }
