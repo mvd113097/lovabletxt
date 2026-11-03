@@ -9,4 +9,4 @@
 - [ ] Telegram connector link (user action)
 - [x] Even request packing (fewest requests, no tiny tail)
 - [x] Offline app shell (published app only)
-- [ ] Skip permanently invalid Gemini keys and stagger parallel key rotation; verify cooldowns and EPUB completeness
+- [x] Skip permanently invalid Gemini keys and stagger parallel key rotation; verified cooldowns, 18 tests, and real two-chapter translation/EPUB completeness
