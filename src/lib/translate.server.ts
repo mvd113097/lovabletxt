@@ -23,6 +23,15 @@ export const FREE_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"] as
 export const OWN_GEMINI_MODEL = FREE_MODELS[0];
 const cooldown = new Map<string, number>(); // `${model}|${key}` or `${model}|*` -> ready-at ms
 const lastUsed = new Map<string, number>();
+// Run-local only: replacing a secret supplies a new key, which remains eligible.
+const invalidKeys = new Set<string>();
+let rotationOffset = 0;
+
+function permanentlyInvalidKey(status: number, body: string) {
+  if (status !== 400 && status !== 401 && status !== 403) return false;
+  // Generic 400/403 can be bad input or model-specific permissions, not a bad key.
+  return /API_KEY_INVALID|API_KEY_EXPIRED|API key not valid|invalid API key|API key expired/i.test(body);
+}
 
 // Free tier ≈ 15 requests/min per project; 6s gap keeps each key ≤ 10/min.
 export const KEY_GAP_MS = 6000;
@@ -55,17 +64,27 @@ export function retryDelayMs(body: string): number | null {
 
 async function ownGeminiCall(keys: string[], input: string): Promise<Map<number, string>> {
   let lastErr = "";
+  const offset = rotationOffset++ % keys.length;
+  const rotated = [...keys.slice(offset), ...keys.slice(0, offset)];
   for (const model of FREE_MODELS) {
-    const now = Date.now();
-    if ((cooldown.get(`${model}|*`) ?? 0) > now) continue;
-    const ready = keys
-      .filter((k) => (cooldown.get(`${model}|${k}`) ?? 0) <= now)
-      .sort((a, b) => (lastUsed.get(a) ?? 0) - (lastUsed.get(b) ?? 0));
-    for (const key of ready) {
-      // Per-minute safety: never hit the same key more often than every KEY_GAP_MS.
+    const attempted = new Set<string>();
+    while (attempted.size < keys.length) {
+      const now = Date.now();
+      if ((cooldown.get(`${model}|*`) ?? 0) > now) break;
+      // Recompute after each await; parallel chapters must not share a stale key list.
+      const ready = rotated
+        .filter((k) => !attempted.has(k) && !invalidKeys.has(k) && (cooldown.get(`${model}|${k}`) ?? 0) <= now)
+        .sort((a, b) => Math.max(now, (lastUsed.get(a) ?? 0) + KEY_GAP_MS) - Math.max(now, (lastUsed.get(b) ?? 0) + KEY_GAP_MS));
+      const key = ready[0];
+      if (!key) break;
+      attempted.add(key);
+      // Reserve synchronously before waiting, across chapters AND models.
       const wait = (lastUsed.get(key) ?? 0) + KEY_GAP_MS - Date.now();
       lastUsed.set(key, Date.now() + Math.max(0, wait));
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      // Another chapter may have invalidated/cooled this key while we waited.
+      if (invalidKeys.has(key) || (cooldown.get(`${model}|${key}`) ?? 0) > Date.now()) continue;
+      if ((cooldown.get(`${model}|*`) ?? 0) > Date.now()) break;
       let res: Response;
       try {
         res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
@@ -89,6 +108,11 @@ async function ownGeminiCall(keys: string[], input: string): Promise<Map<number,
       }
       const body = await res.text();
       const t = Date.now();
+      if (permanentlyInvalidKey(res.status, body)) {
+        invalidKeys.add(key);
+        lastErr = "invalid Gemini key skipped";
+        continue;
+      }
       if (res.status === 429) {
         // Daily quota used up -> rest this key on this model until reset; per-minute -> wait what Google says.
         const daily = /PerDay|per day|daily/i.test(body);
