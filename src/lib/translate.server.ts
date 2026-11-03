@@ -247,7 +247,12 @@ export async function googleLines(lines: string[]): Promise<string[]> {
 async function translateChunk(lines: string[], startNo: number): Promise<{ out: string[]; usedGoogle: boolean }> {
   try {
     let map = await geminiCall(lines, startNo);
+    // Blank lines (e.g. a chapter with no title) have nothing to translate.
+    lines.forEach((l, i) => {
+      if (!l.trim() && !map.has(startNo + i)) map.set(startNo + i, "");
+    });
     let missing = lines.map((_, i) => startNo + i).filter((n) => !map.has(n));
+    let usedGoogle = false;
     if (missing.length) {
       // One repair pass for any skipped lines, still with Gemini.
       const repair = await geminiCall(missing.map((n) => lines[n - startNo]!), 100000);
@@ -256,9 +261,14 @@ async function translateChunk(lines: string[], startNo: number): Promise<{ out: 
         if (t) map.set(n, t);
       });
       missing = missing.filter((n) => !map.has(n));
-      if (missing.length) throw new TransientError(`gemini skipped ${missing.length} line(s)`);
+      if (missing.length) {
+        // Never loop forever on a line Gemini keeps skipping: Google translates just those lines.
+        const g = await googleLines(missing.map((n) => lines[n - startNo]!));
+        missing.forEach((n, i) => map.set(n, g[i] ?? ""));
+        usedGoogle = true;
+      }
     }
-    return { out: lines.map((_, i) => map.get(startNo + i)!.replace(/\s*\n\s*/g, " ")), usedGoogle: false };
+    return { out: lines.map((_, i) => map.get(startNo + i)!.replace(/\s*\n\s*/g, " ")), usedGoogle };
   } catch (e) {
     if (!(e instanceof BlockedError)) throw e;
     // Narrow down the refused part: split in half and retry Gemini, so only the
