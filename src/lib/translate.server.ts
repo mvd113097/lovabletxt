@@ -217,7 +217,31 @@ async function googleOne(text: string): Promise<string> {
   const r2 = await fetch(
     "https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=en&q=" + encodeURIComponent(text),
   );
-  if (!r2.ok) throw new TransientError(`google ${res.status}/${r2.status}`);
+  if (!r2.ok) {
+    // Both free Google endpoints rate-limited: use the Lovable AI gateway so one refused
+    // paragraph can never hold the whole book (and the reading window) hostage.
+    const key = process.env["LOVABLE_API_KEY"];
+    if (key) {
+      try {
+        const g = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: GEMINI_MODEL,
+            messages: [
+              { role: "system", content: "Translate the user's Chinese text into English. Keep the same line breaks. Output only the translation." },
+              { role: "user", content: text },
+            ],
+          }),
+        });
+        if (g.ok) {
+          const t = ((await g.json()) as any)?.choices?.[0]?.message?.content ?? "";
+          if (t.trim()) return t.trim();
+        }
+      } catch {}
+    }
+    throw new TransientError(`google ${res.status}/${r2.status}`);
+  }
   const d2 = (await r2.json()) as any;
   const first = Array.isArray(d2) ? d2[0] : d2?.sentences?.map((s: any) => s.trans ?? "").join("");
   return Array.isArray(first) ? String(first[0] ?? "") : String(first ?? "");
