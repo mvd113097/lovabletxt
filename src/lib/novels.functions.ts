@@ -128,6 +128,8 @@ export const listNovels = createServerFn({ method: "POST" })
         ready: p?.ready ?? 0,
         readyWords: Number(p?.ready_words ?? 0),
         lastError: p?.last_error ?? null,
+        chunksTotal: Number((p as any)?.chunks_total ?? 0),
+        chunksDone: Number((p as any)?.chunks_done ?? 0),
       };
     });
   });
@@ -137,24 +139,34 @@ export const getSettingsFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { requireToken } = await import("./auth.server");
     const s = await requireToken(data.t);
-    return { telegramChatId: s.telegram_chat_id ?? "", telegramConnected: !!process.env["TELEGRAM_API_KEY"] };
+    const x = s as any;
+    return {
+      telegramChatId: s.telegram_chat_id ?? "",
+      telegramConnected: !!process.env["TELEGRAM_API_KEY"],
+      notifyStatus: x.notify_status !== false,
+      notifyDone: x.notify_done !== false,
+    };
   });
 
 export const saveSettings = createServerFn({ method: "POST" })
   .inputValidator((d) =>
     z
-      .object({ t: z.string(), telegramChatId: z.string().max(40), newPin: z.string().min(4).max(64).optional() })
+      .object({ t: z.string(), telegramChatId: z.string().max(300),
+        notifyStatus: z.boolean().optional(),
+        notifyDone: z.boolean().optional(),
+        newPin: z.string().min(4).max(64).optional() })
       .parse(d),
   )
   .handler(async ({ data }) => {
     const { requireToken, hashPasscode, makeToken } = await import("./auth.server");
     await requireToken(data.t);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const patch: { telegram_chat_id: string | null; passcode_hash?: string } = {
-      telegram_chat_id: data.telegramChatId.trim() || null,
-    };
+    const ids = data.telegramChatId.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+    const patch: Record<string, unknown> = { telegram_chat_id: ids.join(",") || null };
+    if (data.notifyStatus !== undefined) patch.notify_status = data.notifyStatus;
+    if (data.notifyDone !== undefined) patch.notify_done = data.notifyDone;
     if (data.newPin) patch.passcode_hash = await hashPasscode(data.newPin);
-    await supabaseAdmin.from("app_settings").update(patch).eq("id", 1);
+    await supabaseAdmin.from("app_settings").update(patch as any).eq("id", 1);
     return { token: patch.passcode_hash ? await makeToken(patch.passcode_hash) : data.t };
   });
 
@@ -164,6 +176,6 @@ export const testTelegram = createServerFn({ method: "POST" })
     const { requireToken } = await import("./auth.server");
     await requireToken(data.t);
     const { sendTelegram } = await import("./worker.server");
-    await sendTelegram("👋 MegaTXT test message — alerts are working.");
-    return { ok: true };
+    const fails = await sendTelegram("👋 MegaTXT test message — alerts are working.");
+    return { ok: !fails.length, fails };
   });
