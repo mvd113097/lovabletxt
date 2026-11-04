@@ -162,7 +162,7 @@ export const saveSettings = createServerFn({ method: "POST" })
     await requireToken(data.t);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const ids = data.telegramChatId.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
-    const patch: Record<string, unknown> = { telegram_chat_id: ids.join(",") || null };
+    const patch: { telegram_chat_id: string | null; notify_status?: boolean; notify_done?: boolean; passcode_hash?: string } = { telegram_chat_id: ids.join(",") || null };
     if (data.notifyStatus !== undefined) patch.notify_status = data.notifyStatus;
     if (data.notifyDone !== undefined) patch.notify_done = data.notifyDone;
     if (data.newPin) patch.passcode_hash = await hashPasscode(data.newPin);
