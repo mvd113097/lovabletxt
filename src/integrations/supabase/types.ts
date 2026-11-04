@@ -18,6 +18,9 @@ export type Database = {
         Row: {
           cron_secret: string
           id: number
+          last_status_at: string | null
+          notify_done: boolean
+          notify_status: boolean
           passcode_hash: string | null
           telegram_chat_id: string | null
           tick_url: string
@@ -25,6 +28,9 @@ export type Database = {
         Insert: {
           cron_secret?: string
           id?: number
+          last_status_at?: string | null
+          notify_done?: boolean
+          notify_status?: boolean
           passcode_hash?: string | null
           telegram_chat_id?: string | null
           tick_url?: string
@@ -32,6 +38,9 @@ export type Database = {
         Update: {
           cron_secret?: string
           id?: number
+          last_status_at?: string | null
+          notify_done?: boolean
+          notify_status?: boolean
           passcode_hash?: string | null
           telegram_chat_id?: string | null
           tick_url?: string
@@ -157,6 +166,8 @@ export type Database = {
       novel_progress: {
         Args: never
         Returns: {
+          chunks_done: number
+          chunks_total: number
           done: number
           google: number
           last_error: string
