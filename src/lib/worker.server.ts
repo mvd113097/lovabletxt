@@ -2,18 +2,50 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { CreditsError, parallelChapters, translateChapter } from "./translate.server";
 import { getSettings } from "./auth.server";
 
-export async function sendTelegram(text: string) {
+export async function sendTelegram(text: string, kind: "done" | "status" | "other" = "other") {
   const lovable = process.env["LOVABLE_API_KEY"];
   const tg = process.env["TELEGRAM_API_KEY"];
-  if (!lovable || !tg) return;
-  const s = await getSettings();
-  if (!s.telegram_chat_id) return;
-  const r = await fetch("https://connector-gateway.lovable.dev/telegram/sendMessage", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${lovable}`, "X-Connection-Api-Key": tg, "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: s.telegram_chat_id, text }),
+  if (!lovable || !tg) return ["Telegram isn't connected"];
+  const s = (await getSettings()) as any;
+  if (kind === "done" && s.notify_done === false) return [];
+  const ids = chatIds(s.telegram_chat_id);
+  const fails: string[] = [];
+  for (const chat_id of ids) {
+    const r = await fetch("https://connector-gateway.lovable.dev/telegram/sendMessage", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${lovable}`, "X-Connection-Api-Key": tg, "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id, text }),
+    });
+    if (!r.ok) {
+      const b = await r.text();
+      console.error(`Telegram failed for ${chat_id} [${r.status}]: ${b}`);
+      fails.push(`${chat_id}: ${r.status} ${b.slice(0, 120)}`);
+    }
+  }
+  return fails;
+}
+
+/** Splits "123, 456 789" into chat IDs. */
+export function chatIds(raw: string | null | undefined) {
+  return (raw ?? "").split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+}
+
+/** Sends a short progress summary at most every 5 minutes while novels are translating. */
+async function maybeSendStatus() {
+  const s = (await getSettings()) as any;
+  if (s.notify_status === false || !chatIds(s.telegram_chat_id).length) return;
+  if (s.last_status_at && Date.now() - new Date(s.last_status_at).getTime() < 5 * 60_000 - 15_000) return;
+  const { data: running } = await supabaseAdmin.from("novels").select("id,title,total_chapters").eq("status", "running");
+  if (!running?.length) return;
+  await supabaseAdmin.from("app_settings").update({ last_status_at: new Date().toISOString() } as any).eq("id", 1);
+  const { data: prog } = await supabaseAdmin.rpc("novel_progress");
+  const map = new Map(((prog ?? []) as any[]).map((p) => [p.novel_id, p]));
+  const lines = running.map((n) => {
+    const p = map.get(n.id) ?? {};
+    const pct = p.chunks_total ? Math.floor((100 * p.chunks_done) / p.chunks_total) : 0;
+    return `📖 "${n.title}": ${p.done ?? 0}/${n.total_chapters} chapters, ${p.chunks_done ?? 0}/${p.chunks_total ?? 0} parts (${pct}%), ready 1–${p.ready ?? 0} · ${Number(p.ready_words ?? 0).toLocaleString("en-US")} words`;
   });
-  if (!r.ok) console.error(`Telegram failed [${r.status}]: ${await r.text()}`);
+  await sendTelegram(`⏳ MegaTXT progress\n${lines.join("\n")}`);
 }
 
 async function finishCheck(novelId: string) {
@@ -30,7 +62,7 @@ async function finishCheck(novelId: string) {
     .eq("notified", false)
     .select("title")
     .maybeSingle();
-  if (data) await sendTelegram(`✅ "${data.title}" finished translating. Open MegaTXT to download the EPUB.`);
+  if (data) await sendTelegram(`✅ "${data.title}" finished translating. Open MegaTXT to download the EPUB.`, "done");
 }
 
 async function processOne(ch: { novel_id: string; idx: number; title: string; source_text: string; partial?: unknown }) {
@@ -86,6 +118,11 @@ export async function runTick() {
     processed += results.filter((r) => r.status === "fulfilled").length;
     if (results.some((r) => r.status === "rejected" && (r.reason instanceof CreditsError))) break;
     if (results.every((r) => r.status === "rejected")) break; // back off until next minute
+  }
+  try {
+    await maybeSendStatus();
+  } catch (e) {
+    console.error("status notify failed", e);
   }
   // Stop the schedule once nothing is left to translate.
   const { count } = await supabaseAdmin

@@ -255,7 +255,11 @@ function Upload({ token, onDone }: { token: string; onDone: () => void }) {
 function NovelCard({ n, token, onChange }: { n: Novel; token: string; onChange: () => void }) {
   const setStatus = useServerFn(setNovelStatus);
   const [busy, setBusy] = useState(false);
-  const pct = n.total ? Math.floor((n.done / n.total) * 100) : 0;
+  const pct = n.chunksTotal
+    ? Math.floor((n.chunksDone / n.chunksTotal) * 100)
+    : n.total
+      ? Math.floor((n.done / n.total) * 100)
+      : 0;
   const incomplete = n.uploaded < n.total;
   const act = async (action: "start" | "pause" | "delete") => {
     if (action === "delete" && !confirm(`Delete "${n.title}" permanently?`)) return;
@@ -316,7 +320,7 @@ function NovelCard({ n, token, onChange }: { n: Novel; token: string; onChange: 
         <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
-        {n.done} / {n.total} chapters ({pct}%)
+        {n.done} / {n.total} chapters ({pct}%){n.chunksTotal > 0 && ` · ${n.chunksDone} / ${n.chunksTotal} parts`}
         {n.google > 0 && ` · ${n.google} sensitive chapter${n.google > 1 ? "s" : ""} via Google`}
       </p>
       {n.ready > 0 && (
@@ -361,6 +365,8 @@ function SettingsButton({ token, onToken }: { token: string; onToken: (t: string
   const [chatId, setChatId] = useState("");
   const [connected, setConnected] = useState(false);
   const [pin, setPin] = useState("");
+  const [notifyStatus, setNotifyStatus] = useState(true);
+  const [notifyDone, setNotifyDone] = useState(true);
   const get = useServerFn(getSettingsFn);
   const save = useServerFn(saveSettings);
   const test = useServerFn(testTelegram);
@@ -370,6 +376,8 @@ function SettingsButton({ token, onToken }: { token: string; onToken: (t: string
     get({ data: { t: token } }).then((s) => {
       setChatId(s.telegramChatId);
       setConnected(s.telegramConnected);
+      setNotifyStatus(s.notifyStatus);
+      setNotifyDone(s.notifyDone);
     });
   }, [open, get, token]);
 
@@ -385,7 +393,7 @@ function SettingsButton({ token, onToken }: { token: string; onToken: (t: string
             onSubmit={async (e) => {
               e.preventDefault();
               try {
-                const r = await save({ data: { t: token, telegramChatId: chatId, newPin: pin || undefined } });
+                const r = await save({ data: { t: token, telegramChatId: chatId, notifyStatus, notifyDone, newPin: pin || undefined } });
                 onToken(r.token);
                 setPin("");
                 toast.success("Saved");
@@ -396,12 +404,20 @@ function SettingsButton({ token, onToken }: { token: string; onToken: (t: string
           >
             <h2 className="font-serif text-lg">Settings</h2>
             <label className="block text-sm">
-              Telegram chat ID
-              <input className={`${input} mt-1`} value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="e.g. 123456789" />
+              Telegram chat IDs
+              <input className={`${input} mt-1`} value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="e.g. 123456789, 987654321" />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={notifyDone} onChange={(e) => setNotifyDone(e.target.checked)} />
+              Alert when a novel finishes
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={notifyStatus} onChange={(e) => setNotifyStatus(e.target.checked)} />
+              Progress update every 5 minutes while translating
             </label>
             <p className="text-xs text-muted-foreground">
               {connected
-                ? "Message your bot once, then put your chat ID here to get an alert when a novel finishes."
+                ? "Each person must send your bot a message once first. Separate several chat IDs with commas."
                 : "Telegram isn't connected yet, so alerts are off."}
             </p>
             <label className="block text-sm">
@@ -414,7 +430,10 @@ function SettingsButton({ token, onToken }: { token: string; onToken: (t: string
                 <button
                   type="button"
                   className={btnGhost}
-                  onClick={() => test({ data: { t: token } }).then(() => toast.success("Test sent"), (e) => toast.error(e.message))}
+                  onClick={() => test({ data: { t: token } }).then(
+                      (r) => (r.ok ? toast.success("Test sent") : toast.error(`Not delivered: ${r.fails.join("; ")}`)),
+                      (e) => toast.error(e.message),
+                    )}
                 >
                   Send test
                 </button>
